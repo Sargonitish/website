@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { DataProvider } from "./data/store";
+import { AuthProvider } from "./firebase/auth";
 import Hero from "./components/sections/Hero";
 import LoveLetter from "./components/sections/LoveLetter";
 import MemoryTimeline from "./components/sections/MemoryTimeline";
@@ -61,10 +62,12 @@ export default function App() {
   }, []);
 
   return (
-    <DataProvider>
-      <main className="relative min-h-screen">
-        {route === "#admin" ? <Admin /> : <MainSite />}
-      </main>
-    </DataProvider>
+    <AuthProvider>
+      <DataProvider>
+        <main className="relative min-h-screen">
+          {route === "#admin" ? <Admin /> : <MainSite />}
+        </main>
+      </DataProvider>
+    </AuthProvider>
   );
 }

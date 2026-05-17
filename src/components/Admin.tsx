@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useDataStore } from "../data/store";
 import type { BucketItem, Memory, Photo, Reason } from "../types";
 
-const ADMIN_PASSWORD = "admin123";
+const ADMIN_PASSWORD = "Nitish@1510";
 
 function AdminLogin({ onLogin }: { onLogin: () => void }) {
   const [pw, setPw] = useState("");

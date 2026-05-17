@@ -1,36 +1,9 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
 import type { AppData, SiteConfig, LoveLetterData, Memory, Reason, Photo, BucketItem } from "../types";
 import { defaultData } from "./defaults";
+import { saveData as fbSave, loadData as fbLoad } from "../firebase/db";
 
 const STORAGE_KEY = "her-app-data";
-
-function loadInitialData(): AppData {
-  const urlData = extractUrlData();
-  if (urlData) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(urlData));
-    return urlData;
-  }
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as AppData;
-      return mergeDeep(cloneDefaults(), parsed);
-    }
-  } catch {}
-  return cloneDefaults();
-}
-
-function extractUrlData(): AppData | null {
-  try {
-    const params = new URLSearchParams(window.location.search);
-    const encoded = params.get("data");
-    if (!encoded) return null;
-    const json = decodeURIComponent(atob(encoded));
-    const parsed = JSON.parse(json) as AppData;
-    if (parsed && parsed.config && parsed.loveLetter) return parsed;
-  } catch {}
-  return null;
-}
 
 function cloneDefaults(): AppData {
   return {
@@ -55,12 +28,21 @@ function mergeDeep(defaults: AppData, overrides: Partial<AppData>): AppData {
   return result;
 }
 
-function saveData(data: AppData) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+function LoadingScreen() {
+  return (
+    <div className="fixed inset-0 flex items-center justify-center bg-gradient-to-br from-amber-50 via-sky-50 to-cyan-50">
+      <div className="text-center">
+        <div className="animate-spin text-4xl">✨</div>
+        <p className="mt-4 text-sm text-gray-500">Loading your surprise...</p>
+      </div>
+    </div>
+  );
 }
 
 interface DataStore {
   data: AppData;
+  docId: string | null;
+  saving: boolean;
   updateConfig: (c: SiteConfig) => void;
   updateLoveLetter: (l: LoveLetterData) => void;
   updateMemories: (m: Memory[]) => void;
@@ -68,17 +50,69 @@ interface DataStore {
   updatePhotos: (p: Photo[]) => void;
   updateBucketList: (b: BucketItem[]) => void;
   resetAll: () => void;
+  saveToFirestore: () => Promise<string>;
 }
 
 const DataContext = createContext<DataStore | null>(null);
 
 export function DataProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<AppData>(loadInitialData);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [data, setData] = useState<AppData>(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) return mergeDeep(cloneDefaults(), JSON.parse(raw));
+    } catch {}
+    return cloneDefaults();
+  });
+  const [docId, setDocId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("id");
+    const legacyData = params.get("data");
+
+    if (id) {
+      fbLoad(id).then((fireData) => {
+        if (fireData) {
+          setData(fireData);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(fireData));
+          setDocId(id);
+        }
+        setLoading(false);
+      }).catch(() => setLoading(false));
+    } else if (legacyData) {
+      try {
+        const json = decodeURIComponent(atob(legacyData));
+        const parsed = JSON.parse(json) as AppData;
+        if (parsed && parsed.config && parsed.loveLetter) {
+          setData(parsed);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+        }
+      } catch {}
+      setLoading(false);
+    } else {
+      setLoading(false);
+    }
+  }, []);
 
   const persist = useCallback((next: AppData) => {
     setData(next);
-    saveData(next);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   }, []);
+
+  const saveToFirestore = useCallback(async () => {
+    setSaving(true);
+    try {
+      const id = docId || crypto.randomUUID();
+      await fbSave(id, data);
+      setDocId(id);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      return id;
+    } finally {
+      setSaving(false);
+    }
+  }, [data, docId]);
 
   const updateConfig = useCallback((c: SiteConfig) => persist({ ...data, config: c }), [data, persist]);
   const updateLoveLetter = useCallback((l: LoveLetterData) => persist({ ...data, loveLetter: l }), [data, persist]);
@@ -88,8 +122,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const updateBucketList = useCallback((b: BucketItem[]) => persist({ ...data, bucketList: b }), [data, persist]);
   const resetAll = useCallback(() => persist(cloneDefaults()), [persist]);
 
+  if (loading) return <LoadingScreen />;
+
   return (
-    <DataContext.Provider value={{ data, updateConfig, updateLoveLetter, updateMemories, updateReasons, updatePhotos, updateBucketList, resetAll }}>
+    <DataContext.Provider value={{ data, docId, saving, updateConfig, updateLoveLetter, updateMemories, updateReasons, updatePhotos, updateBucketList, resetAll, saveToFirestore }}>
       {children}
     </DataContext.Provider>
   );

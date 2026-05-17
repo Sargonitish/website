@@ -1,6 +1,6 @@
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { useDataStore } from "../data/store";
-import type { BucketItem, Memory, Photo, Reason, AppData } from "../types";
+import type { BucketItem, Memory, Photo, Reason } from "../types";
 
 const ADMIN_PASSWORD = "Nitish@1510";
 
@@ -101,17 +101,11 @@ function ArrayEditor<T extends { id: number }>({ items, renderItem, onAdd, onRem
   );
 }
 
-function ShareModal({ data, onClose }: { data: AppData; onClose: () => void }) {
+function ShareModal({ docId, onClose }: { docId: string; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
 
-  const link = useCallback(() => {
-    try {
-      const json = JSON.stringify(data);
-      const encoded = btoa(encodeURIComponent(json));
-      const base = window.location.origin + window.location.pathname.replace("#admin", "").replace(/\/$/, "");
-      return `${base}?data=${encoded}`;
-    } catch { return ""; }
-  }, [data])();
+  const base = window.location.origin + window.location.pathname.replace("#admin", "").replace(/\/$/, "");
+  const link = `${base}?id=${docId}`;
 
   const copyLink = async () => {
     try { await navigator.clipboard.writeText(link); } catch {
@@ -131,7 +125,7 @@ function ShareModal({ data, onClose }: { data: AppData; onClose: () => void }) {
       <div className="mx-4 w-full max-w-lg rounded-3xl border border-white/40 bg-white/90 p-8 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <h2 className="font-display text-xl font-bold text-gray-800">Share Your Custom Site</h2>
         <p className="mt-2 text-sm text-gray-500">
-          Copy this link and send it to your best friend. They'll see all your custom changes.
+          Your data is saved to the cloud. Share this link so your best friend sees everything.
         </p>
         <div className="mt-4 flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 p-3">
           <input readOnly value={link} className="flex-1 bg-transparent text-xs text-gray-600 outline-none" />
@@ -139,9 +133,6 @@ function ShareModal({ data, onClose }: { data: AppData; onClose: () => void }) {
             {copied ? "Copied!" : "Copy Link"}
           </button>
         </div>
-        <p className="mt-3 text-[10px] leading-relaxed text-gray-400">
-          ⚠️ Your custom data is encoded in the URL. It works on any device — no server needed.
-        </p>
         <button onClick={onClose} className="mt-4 w-full cursor-pointer rounded-lg bg-gray-100 py-2 text-sm text-gray-600 transition-colors hover:bg-gray-200">Close</button>
       </div>
     </div>
@@ -149,11 +140,13 @@ function ShareModal({ data, onClose }: { data: AppData; onClose: () => void }) {
 }
 
 export default function Admin() {
-  const { data, updateConfig, updateLoveLetter, updateMemories, updateReasons, updatePhotos, updateBucketList, resetAll } = useDataStore();
+  const { data, saving, updateConfig, updateLoveLetter, updateMemories, updateReasons, updatePhotos, updateBucketList, resetAll, saveToFirestore } = useDataStore();
   const [authenticated, setAuthenticated] = useState(false);
   const [saved, setSaved] = useState(false);
   const [showReset, setShowReset] = useState(false);
   const [showShare, setShowShare] = useState(false);
+  const [shareDocId, setShareDocId] = useState<string | null>(null);
+  const [shareError, setShareError] = useState("");
 
   if (!authenticated) return <AdminLogin onLogin={() => setAuthenticated(true)} />;
 
@@ -173,8 +166,17 @@ export default function Admin() {
             <p className="mt-1 text-sm text-gray-500">Edit all content. Changes save to your browser.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <button onClick={() => setShowShare(true)} className="cursor-pointer rounded-lg bg-gradient-to-r from-sunshine to-warm-coral px-4 py-2 text-xs font-semibold text-white shadow-lg transition-all hover:shadow-xl">
-              🔗 Share Link
+            <button onClick={async () => {
+              setShareError("");
+              try {
+                const id = await saveToFirestore();
+                setShareDocId(id);
+                setShowShare(true);
+              } catch {
+                setShareError("Failed to save. Check your Firebase config.");
+              }
+            }} disabled={saving} className="cursor-pointer rounded-lg bg-gradient-to-r from-sunshine to-warm-coral px-4 py-2 text-xs font-semibold text-white shadow-lg transition-all hover:shadow-xl disabled:opacity-50">
+              {saving ? "⏳ Saving..." : "🔗 Share Link"}
             </button>
             <button onClick={() => setShowReset(true)} className="cursor-pointer rounded-lg border border-red-200 px-4 py-2 text-xs text-red-500 transition-colors hover:bg-red-50">Reset</button>
             <button onClick={handleSave} className="cursor-pointer rounded-lg bg-gradient-to-r from-warm-coral to-sky-blue px-6 py-2 text-xs font-semibold text-white shadow-lg transition-all hover:shadow-xl">
@@ -272,7 +274,8 @@ export default function Admin() {
         <p className="text-center text-[10px] text-gray-400">Changes are stored in your browser. Use "Share Link" to let others see your custom content.</p>
       </div>
 
-      {showShare && <ShareModal data={data} onClose={() => setShowShare(false)} />}
+      {shareError && <p className="text-center text-sm text-red-500">{shareError}</p>}
+      {showShare && shareDocId && <ShareModal docId={shareDocId} onClose={() => setShowShare(false)} />}
 
       {showReset && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">

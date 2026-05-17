@@ -4,15 +4,44 @@ import { defaultData } from "./defaults";
 
 const STORAGE_KEY = "her-app-data";
 
-function loadData(): AppData {
+function loadInitialData(): AppData {
+  const urlData = extractUrlData();
+  if (urlData) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(urlData));
+    return urlData;
+  }
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as AppData;
-      return mergeDeep(defaultData, parsed);
+      return mergeDeep(cloneDefaults(), parsed);
     }
   } catch {}
-  return { ...defaultData, memories: [...defaultData.memories], reasons: [...defaultData.reasons], photos: [...defaultData.photos], bucketList: [...defaultData.bucketList] };
+  return cloneDefaults();
+}
+
+function extractUrlData(): AppData | null {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const encoded = params.get("data");
+    if (!encoded) return null;
+    const json = decodeURIComponent(atob(encoded));
+    const parsed = JSON.parse(json) as AppData;
+    if (parsed && parsed.config && parsed.loveLetter) return parsed;
+  } catch {}
+  return null;
+}
+
+function cloneDefaults(): AppData {
+  return {
+    ...defaultData,
+    memories: defaultData.memories.map((m) => ({ ...m })),
+    reasons: defaultData.reasons.map((r) => ({ ...r })),
+    photos: defaultData.photos.map((p) => ({ ...p })),
+    bucketList: defaultData.bucketList.map((b) => ({ ...b })),
+    loveLetter: { ...defaultData.loveLetter, paragraphs: [...defaultData.loveLetter.paragraphs] },
+    config: { ...defaultData.config, birthday: { ...defaultData.config.birthday } },
+  };
 }
 
 function mergeDeep(defaults: AppData, overrides: Partial<AppData>): AppData {
@@ -44,7 +73,7 @@ interface DataStore {
 const DataContext = createContext<DataStore | null>(null);
 
 export function DataProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<AppData>(loadData);
+  const [data, setData] = useState<AppData>(loadInitialData);
 
   const persist = useCallback((next: AppData) => {
     setData(next);
@@ -57,7 +86,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const updateReasons = useCallback((r: Reason[]) => persist({ ...data, reasons: r }), [data, persist]);
   const updatePhotos = useCallback((p: Photo[]) => persist({ ...data, photos: p }), [data, persist]);
   const updateBucketList = useCallback((b: BucketItem[]) => persist({ ...data, bucketList: b }), [data, persist]);
-  const resetAll = useCallback(() => persist({ ...defaultData, memories: [...defaultData.memories], reasons: [...defaultData.reasons], photos: [...defaultData.photos], bucketList: [...defaultData.bucketList] }), [persist]);
+  const resetAll = useCallback(() => persist(cloneDefaults()), [persist]);
 
   return (
     <DataContext.Provider value={{ data, updateConfig, updateLoveLetter, updateMemories, updateReasons, updatePhotos, updateBucketList, resetAll }}>

@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useDataStore } from "../data/store";
-import type { BucketItem, Memory, Photo, Reason } from "../types";
+import type { BucketItem, Memory, Photo, Reason, AppData } from "../types";
 
 const ADMIN_PASSWORD = "Nitish@1510";
 
@@ -46,11 +46,13 @@ function Section({ title, desc, children }: { title: string; desc: string; child
 function Input({ label, value, onChange, multiline = false, type = "text" }: {
   label: string; value: string; onChange: (v: string) => void; multiline?: boolean; type?: string;
 }) {
+  const id = label.replace(/\s+/g, "-").toLowerCase();
   return (
-    <label className="block">
+    <label className="block" htmlFor={id}>
       <span className="mb-1 block text-xs font-medium text-gray-500">{label}</span>
       {multiline ? (
         <textarea
+          id={id}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           rows={3}
@@ -58,6 +60,7 @@ function Input({ label, value, onChange, multiline = false, type = "text" }: {
         />
       ) : (
         <input
+          id={id}
           type={type}
           value={value}
           onChange={(e) => onChange(e.target.value)}
@@ -84,7 +87,7 @@ function ArrayEditor<T extends { id: number }>({ items, renderItem, onAdd, onRem
           >
             ✕
           </button>
-          <div className="text-xs font-medium text-gray-400 mb-2">#{i + 1}</div>
+          <div className="mb-2 text-xs font-medium text-gray-400">#{i + 1}</div>
           {renderItem(item, i)}
         </div>
       ))}
@@ -98,11 +101,59 @@ function ArrayEditor<T extends { id: number }>({ items, renderItem, onAdd, onRem
   );
 }
 
+function ShareModal({ data, onClose }: { data: AppData; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+
+  const link = useCallback(() => {
+    try {
+      const json = JSON.stringify(data);
+      const encoded = btoa(encodeURIComponent(json));
+      const base = window.location.origin + window.location.pathname.replace("#admin", "").replace(/\/$/, "");
+      return `${base}?data=${encoded}`;
+    } catch { return ""; }
+  }, [data])();
+
+  const copyLink = async () => {
+    try { await navigator.clipboard.writeText(link); } catch {
+      const ta = document.createElement("textarea");
+      ta.value = link;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
+      <div className="mx-4 w-full max-w-lg rounded-3xl border border-white/40 bg-white/90 p-8 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <h2 className="font-display text-xl font-bold text-gray-800">Share Your Custom Site</h2>
+        <p className="mt-2 text-sm text-gray-500">
+          Copy this link and send it to your best friend. They'll see all your custom changes.
+        </p>
+        <div className="mt-4 flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 p-3">
+          <input readOnly value={link} className="flex-1 bg-transparent text-xs text-gray-600 outline-none" />
+          <button onClick={copyLink} className="shrink-0 cursor-pointer rounded-lg bg-gradient-to-r from-warm-coral to-sky-blue px-4 py-2 text-xs font-semibold text-white transition-all hover:shadow-lg">
+            {copied ? "Copied!" : "Copy Link"}
+          </button>
+        </div>
+        <p className="mt-3 text-[10px] leading-relaxed text-gray-400">
+          ⚠️ Your custom data is encoded in the URL. It works on any device — no server needed.
+        </p>
+        <button onClick={onClose} className="mt-4 w-full cursor-pointer rounded-lg bg-gray-100 py-2 text-sm text-gray-600 transition-colors hover:bg-gray-200">Close</button>
+      </div>
+    </div>
+  );
+}
+
 export default function Admin() {
   const { data, updateConfig, updateLoveLetter, updateMemories, updateReasons, updatePhotos, updateBucketList, resetAll } = useDataStore();
   const [authenticated, setAuthenticated] = useState(false);
   const [saved, setSaved] = useState(false);
   const [showReset, setShowReset] = useState(false);
+  const [showShare, setShowShare] = useState(false);
 
   if (!authenticated) return <AdminLogin onLogin={() => setAuthenticated(true)} />;
 
@@ -114,35 +165,27 @@ export default function Admin() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-50 via-sky-50 to-cyan-50 px-4 py-24">
       <div className="mx-auto max-w-4xl space-y-8">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="font-display text-3xl font-bold text-gray-800 md:text-4xl">
               <span className="gradient-text">Admin Panel</span>
             </h1>
-            <p className="mt-1 text-sm text-gray-500">
-              Edit all content on the birthday website. Changes save to localStorage.
-            </p>
+            <p className="mt-1 text-sm text-gray-500">Edit all content. Changes save to your browser.</p>
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setShowReset(true)}
-              className="cursor-pointer rounded-lg border border-red-200 px-4 py-2 text-xs text-red-500 transition-colors hover:bg-red-50"
-            >
-              Reset
+          <div className="flex flex-wrap items-center gap-2">
+            <button onClick={() => setShowShare(true)} className="cursor-pointer rounded-lg bg-gradient-to-r from-sunshine to-warm-coral px-4 py-2 text-xs font-semibold text-white shadow-lg transition-all hover:shadow-xl">
+              🔗 Share Link
             </button>
-            <button
-              onClick={handleSave}
-              className="cursor-pointer rounded-lg bg-gradient-to-r from-warm-coral to-sky-blue px-6 py-2 text-xs font-semibold text-white shadow-lg shadow-warm-coral/20 transition-all hover:shadow-xl"
-            >
-              {saved ? "✓ Saved!" : "Save Changes"}
+            <button onClick={() => setShowReset(true)} className="cursor-pointer rounded-lg border border-red-200 px-4 py-2 text-xs text-red-500 transition-colors hover:bg-red-50">Reset</button>
+            <button onClick={handleSave} className="cursor-pointer rounded-lg bg-gradient-to-r from-warm-coral to-sky-blue px-6 py-2 text-xs font-semibold text-white shadow-lg transition-all hover:shadow-xl">
+              {saved ? "✓ Saved!" : "Save"}
             </button>
-            <a
-              href="/"
-              className="rounded-lg bg-white/50 px-4 py-2 text-xs text-gray-500 shadow-sm transition-colors hover:bg-white/80"
-            >
-              ← Back to Site
-            </a>
+            <a href="/" className="rounded-lg bg-white/50 px-4 py-2 text-xs text-gray-500 shadow-sm transition-colors hover:bg-white/80">← Back</a>
           </div>
+        </div>
+
+        <div className="rounded-2xl border border-sunshine/30 bg-sunshine/10 p-4 text-sm text-gray-700">
+          💡 <strong>Changes are only visible to you</strong> until you click <strong>"Share Link"</strong> and send that link to your friend.
         </div>
 
         <Section title="Site Configuration" desc="Change the name, birthday date, and hero message">
@@ -173,22 +216,14 @@ export default function Admin() {
         <Section title="Memories Timeline" desc="Edit relationship timeline entries">
           <ArrayEditor<Memory>
             items={data.memories}
-
             onRemove={(id) => updateMemories(data.memories.filter((m) => m.id !== id))}
-            onAdd={() => {
-              const maxId = Math.max(...data.memories.map((m) => m.id), 0);
-              updateMemories([...data.memories, { id: maxId + 1, date: "", title: "", caption: "", image: "" }]);
-            }}
+            onAdd={() => { const m = Math.max(...data.memories.map((x) => x.id), 0); updateMemories([...data.memories, { id: m + 1, date: "", title: "", caption: "", image: "" }]); }}
             renderItem={(item) => (
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <Input label="Date" value={item.date} onChange={(v) => updateMemories(data.memories.map((m) => m.id === item.id ? { ...m, date: v } : m))} />
                 <Input label="Title" value={item.title} onChange={(v) => updateMemories(data.memories.map((m) => m.id === item.id ? { ...m, title: v } : m))} />
-                <div className="md:col-span-2">
-                  <Input label="Caption" value={item.caption} multiline onChange={(v) => updateMemories(data.memories.map((m) => m.id === item.id ? { ...m, caption: v } : m))} />
-                </div>
-                <div className="md:col-span-2">
-                  <Input label="Image URL" value={item.image} onChange={(v) => updateMemories(data.memories.map((m) => m.id === item.id ? { ...m, image: v } : m))} />
-                </div>
+                <div className="md:col-span-2"><Input label="Caption" value={item.caption} multiline onChange={(v) => updateMemories(data.memories.map((m) => m.id === item.id ? { ...m, caption: v } : m))} /></div>
+                <div className="md:col-span-2"><Input label="Image URL" value={item.image} onChange={(v) => updateMemories(data.memories.map((m) => m.id === item.id ? { ...m, image: v } : m))} /></div>
               </div>
             )}
           />
@@ -197,27 +232,17 @@ export default function Admin() {
         <Section title="Reasons" desc="Edit the reasons why she's the best">
           <ArrayEditor<Reason>
             items={data.reasons}
-
             onRemove={(id) => updateReasons(data.reasons.filter((r) => r.id !== id))}
-            onAdd={() => {
-              const maxId = Math.max(...data.reasons.map((r) => r.id), 0);
-              updateReasons([...data.reasons, { id: maxId + 1, text: "" }]);
-            }}
-            renderItem={(item) => (
-              <Input label="Reason Text" value={item.text} multiline onChange={(v) => updateReasons(data.reasons.map((r) => r.id === item.id ? { ...r, text: v } : r))} />
-            )}
+            onAdd={() => { const m = Math.max(...data.reasons.map((x) => x.id), 0); updateReasons([...data.reasons, { id: m + 1, text: "" }]); }}
+            renderItem={(item) => <Input label="Reason Text" value={item.text} multiline onChange={(v) => updateReasons(data.reasons.map((r) => r.id === item.id ? { ...r, text: v } : r))} />}
           />
         </Section>
 
         <Section title="Photo Gallery" desc="Edit gallery image URLs">
           <ArrayEditor<Photo>
             items={data.photos}
-
             onRemove={(id) => updatePhotos(data.photos.filter((p) => p.id !== id))}
-            onAdd={() => {
-              const maxId = Math.max(...data.photos.map((p) => p.id), 0);
-              updatePhotos([...data.photos, { id: maxId + 1, src: "", alt: "", width: 600, height: 800 }]);
-            }}
+            onAdd={() => { const m = Math.max(...data.photos.map((x) => x.id), 0); updatePhotos([...data.photos, { id: m + 1, src: "", alt: "", width: 600, height: 800 }]); }}
             renderItem={(item) => (
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <Input label="Image URL" value={item.src} onChange={(v) => updatePhotos(data.photos.map((p) => p.id === item.id ? { ...p, src: v } : p))} />
@@ -232,34 +257,28 @@ export default function Admin() {
         <Section title="Bucket List" desc="Edit future adventure plans">
           <ArrayEditor<BucketItem>
             items={data.bucketList}
-
             onRemove={(id) => updateBucketList(data.bucketList.filter((b) => b.id !== id))}
-            onAdd={() => {
-              const maxId = Math.max(...data.bucketList.map((b) => b.id), 0);
-              updateBucketList([...data.bucketList, { id: maxId + 1, title: "", icon: "✨", description: "" }]);
-            }}
+            onAdd={() => { const m = Math.max(...data.bucketList.map((x) => x.id), 0); updateBucketList([...data.bucketList, { id: m + 1, title: "", icon: "✨", description: "" }]); }}
             renderItem={(item) => (
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <Input label="Title" value={item.title} onChange={(v) => updateBucketList(data.bucketList.map((b) => b.id === item.id ? { ...b, title: v } : b))} />
                 <Input label="Icon (emoji)" value={item.icon} onChange={(v) => updateBucketList(data.bucketList.map((b) => b.id === item.id ? { ...b, icon: v } : b))} />
-                <div className="md:col-span-2">
-                  <Input label="Description" value={item.description} multiline onChange={(v) => updateBucketList(data.bucketList.map((b) => b.id === item.id ? { ...b, description: v } : b))} />
-                </div>
+                <div className="md:col-span-2"><Input label="Description" value={item.description} multiline onChange={(v) => updateBucketList(data.bucketList.map((b) => b.id === item.id ? { ...b, description: v } : b))} /></div>
               </div>
             )}
           />
         </Section>
 
-        <p className="text-center text-[10px] text-gray-400">
-          All data is stored in your browser's localStorage. Changes persist until you reset.
-        </p>
+        <p className="text-center text-[10px] text-gray-400">Changes are stored in your browser. Use "Share Link" to let others see your custom content.</p>
       </div>
+
+      {showShare && <ShareModal data={data} onClose={() => setShowShare(false)} />}
 
       {showReset && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="w-full max-w-sm rounded-3xl border border-white/40 bg-white/90 p-8 shadow-2xl">
             <h2 className="text-center font-display text-xl font-bold text-gray-800">Reset All Data?</h2>
-            <p className="mt-2 text-center text-sm text-gray-500">This will restore the default content. This cannot be undone.</p>
+            <p className="mt-2 text-center text-sm text-gray-500">This will restore default content. Cannot be undone.</p>
             <div className="mt-6 flex justify-center gap-4">
               <button onClick={() => setShowReset(false)} className="cursor-pointer rounded-lg bg-gray-100 px-6 py-2 text-sm text-gray-600 transition-colors hover:bg-gray-200">Cancel</button>
               <button onClick={() => { resetAll(); setShowReset(false); }} className="cursor-pointer rounded-lg bg-red-500 px-6 py-2 text-sm text-white transition-colors hover:bg-red-600">Reset All</button>
